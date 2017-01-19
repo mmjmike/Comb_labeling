@@ -1,4 +1,4 @@
-import tkinter as tk
+import tkinter
 import csv
 import time
 import math
@@ -10,11 +10,27 @@ RES_TYPES = ("A", "C", "D", "E", "F", "G", "H", "I", "K", "L",
              "M", "N", "P", "Q", "R", "S", "T", "V", "W", "Y")
 LABEL_TYPES = ("X", "N", "C", "D")
 CHECK_PRICE = True
-HNCA = True
+HNCA = False
 TIME = False
+SEQUENCE = ""
+STOCK_TABLE = [[False for col in range(20)]
+                    for row in range(4)]
+USAGE_TABLE = {}
+for res in RES_TYPES:
+    USAGE_TABLE.update({res: 1})
+USAGE_TABLE["R"] = 2.1
+USAGE_TABLE["D"] = 1.8
+USAGE_TABLE["E"] = 1.8
+USAGE_TABLE["H"] = 1.4
+USAGE_TABLE["K"] = 1.2
+USAGE_TABLE["M"] = 1.8
+USAGE_TABLE["R"] = 1.8
+print(USAGE_TABLE)
+STOCK_NAME = ""
+JOB_NAME = ""
+PRICES_TABLE = [[0 for col in range(20)] for row in range(4)]
+
 # Classes
-
-
 
 
 class Sequence:
@@ -99,6 +115,9 @@ class Sequence:
         self.ranked_residues.reverse()
         self.rank_of_residue = [rank for rank in sorted(residue_rank)]
         self.rank_of_residue.reverse()
+        self.res_no_second.append("P")
+        self.residues_first = [res for res in self.ranked_residues if res not in self.res_no_first]
+        self.residues_second = [res for res in self.ranked_residues if res not in self.res_no_second]
 
     def _residues_to_label(self):
         self.residues_nitro = []
@@ -154,7 +173,9 @@ class Sequence:
 
     def _count_pairs(self):
         self.residue_pairs = [[0 for col in range(len(self.residues_nitro))]
-                    for row in range(len(self.residues_carbon))]
+                              for row in range(len(self.residues_carbon))]
+        self.all_residue_pairs = [[0 for col in range(len(self.residues_second))]
+                                  for row in range(len(self.residues_first))]
         for i in range(len(self.sequence) - 1):  # Count all pairs in sequence,
             pair = self.sequence[i:(i + 2)]
             if pair[0] == '*' or pair[1] == '*':
@@ -168,6 +189,10 @@ class Sequence:
             else:
                 second_res = self.residues_nitro.index(pair[1])
             self.residue_pairs[first_res][second_res] += 1
+            index_first = self.residues_first.index(pair[0])
+            if pair[1] != "P":
+                index_second = self.residues_second.index(pair[1])
+                self.all_residue_pairs[index_first][index_second] += 1
 
     def _calculate_subtable_coordinates(self):
         self.subtable_coordinates = []
@@ -180,8 +205,9 @@ class Sequence:
             residue = self.residues_to_label[i]
             if i == 0:
                 if residue in self.residues_nitro:
-                    if residue in self.residues_carbon and self.residue_pairs[0][0]:
-                        self.new_coordinates.append((0, 0))
+                    if residue in self.residues_carbon:
+                        if self.residue_pairs[0][0]:
+                            self.new_coordinates.append((0, 0))
                         carbon += 1
                     if check_other and self.residue_pairs[-1][0] and not self.bad_residue[0]:
                         self.new_coordinates.append((len(self.residues_carbon) - 1, 0))
@@ -200,6 +226,8 @@ class Sequence:
                         self.new_coordinates.append((len(self.residues_carbon) - 1, nitro))
                     nitro += 1
             self.subtable_coordinates.append(self.new_coordinates)
+        print("Subtable")
+        print(self.subtable_coordinates)
 
     def __str__(self):
         return self.sequence
@@ -250,6 +278,8 @@ class Solution:
         self.labeling_dictionary = {}
         self.best_price = 0
         self.last_price = []
+        self.usage = stock.usage
+        print(self.usage)
 
     def __str__(self):
         output = "Solution " + self.name +"\n"
@@ -381,7 +411,6 @@ class Solution:
     def _base_case(self):
         residue = self.sequence.residues_to_label[len(self.solution)]
         return ''.join([self.stock.label_options[residue][0] for _ in range(self.samples_num)])
-
 
     def _calculate_symmetry(self):
         symmetry = self.symmetry[-1]
@@ -623,10 +652,12 @@ class Solution:
             dict_filled[residue] += num_of_nitrogens
             if 'N' in self.stock.label_options[residue]:
                 price += (num_of_nitrogens
-                          * int(self.stock.price_dict[residue]["N"]))
+                          * int(self.stock.price_dict[residue]["N"])
+                          * self.usage[residue])
             else:
                 price += (num_of_nitrogens
-                          * int(self.stock.price_dict[residue]["D"]))
+                          * int(self.stock.price_dict[residue]["D"])
+                          * self.usage[residue])
         for i in range(len(self.sequence.residues_carbon) - self.carbon):
             # add comparison between N and D variants
             residue = self.sequence.residues_carbon[i + self.carbon]
@@ -641,16 +672,20 @@ class Solution:
             dict_filled[residue] += num_of_carbons
             if 'C' in self.stock.label_options[residue]:
                 price += (num_of_carbons
-                          * int(self.stock.price_dict[residue]["C"]))
+                          * int(self.stock.price_dict[residue]["C"])
+                          * self.usage[residue])
             else:
                 price += (num_of_carbons
-                          * int(self.stock.price_dict[residue]["D"]))
+                          * int(self.stock.price_dict[residue]["D"])
+                          * self.usage[residue])
                 if 'N' not in self.stock.label_options[residue]:
                     dict_filled[residue] += num_of_carbons
         for i in range(len(self.sequence.residues_to_label) - self.depth):
             residue = self.sequence.residues_to_label[i + self.depth]
             cheapest_option = self._find_cheapest_option(residue)
-            price += cheapest_option * (self.samples_num - dict_filled[residue])
+            price += (cheapest_option
+                      * (self.samples_num - dict_filled[residue]) \
+                      * self.usage[residue])
         return price
 
     def _find_cheapest_option(self, residue):
@@ -699,7 +734,7 @@ class Solution:
     def calculate_price_for_residue(self, residue, labeling):
         price = 0
         for i in range(len(labeling)):
-            price += int(self.stock.price_dict[residue][labeling[i]])
+            price += int(self.stock.price_dict[residue][labeling[i]]) * self.usage[residue]
         return price
 
     def _generate_last_solution(self):
@@ -713,6 +748,94 @@ class Solution:
         for i in range(self.samples_num):
             code += 'X'
         return code
+
+    def print_table(self):
+        aa_types_1 = self.sequence.residues_carbon
+        aa_types_2 = self.sequence.residues_nitro
+        aa_pairs = self.sequence.residue_pairs
+        code_dict = self.labeling_dictionary
+        num_of_samples = self.samples_num
+
+        cell_height = 20
+        cell_width = 50
+
+
+
+        row_number = len(aa_types_1)
+        column_number = len(aa_types_2)
+
+        top = tkinter.Tk()
+        C = tkinter.Canvas(top, bg="black", height=cell_height * (row_number + 2),
+                           width=cell_width * (column_number + 2))
+
+
+        ### Draw the table and fill the headers
+        for i in range(row_number):
+            C.create_line(0, cell_height * (i + 1), cell_width * (column_number + 2), cell_height * (i + 1),
+                          fill="white")
+            C.create_text(cell_width / 2, cell_height * (i + 2.5), text=aa_types_1[i], fill="white")
+            C.create_text(cell_width * 1.5, cell_height * (i + 2.5), text=code_dict[aa_types_1[i]], fill="white")
+        for i in range(column_number):
+            C.create_line(cell_width * (i + 1), 0, cell_width * (i + 1), cell_height * (row_number + 2),
+                          fill="white")
+            C.create_text(cell_width * (i + 2.5), cell_height / 2, text=aa_types_2[i], fill="white")
+
+            column_codes = self.get_codes(aa_types_2, code_dict)
+            codes_match = 0
+            for k in range(column_number):
+                if (k != i and self._compare_nitrogen_patterns(column_codes[i], column_codes[k])):
+                    codes_match = 1
+                if codes_match:
+                    cell_color = 'red'
+                else:
+                    cell_color = 'green'
+            C.create_rectangle(cell_width * (i + 2) + 1, cell_height + 1, cell_width * (i + 3) - 1,
+                               cell_height * 2 - 1, fill=cell_color)
+
+            C.create_text(cell_width * (i + 2.5), cell_height * 1.5, text=code_dict[aa_types_2[i]], fill="white")
+        C.create_line(0, cell_height * (row_number + 1), cell_width * (column_number + 2),
+                      cell_height * (row_number + 1), fill="white")
+        C.create_line(cell_width * (column_number + 1), 0, cell_width * (column_number + 1),
+                      cell_height * (row_number + 2), fill="white")
+
+        all_aa_codes = [['' for col in range(column_number)] for row in range(row_number)]
+        for i in range(row_number):
+            for j in range(column_number):
+                if aa_pairs[i][j]:
+                    all_aa_codes[i][j] = self._calculate_code_multiple(code_dict[aa_types_1[i]], code_dict[aa_types_2[j]])
+
+        ### fill the cells
+        good_cells = 0
+        bad_cells = 0
+        for i in range(row_number):
+            for j in range(column_number):
+                if aa_pairs[i][j] > 0:
+                    codes_match = 0
+                    for k in range(row_number):
+                        if (k != i and all_aa_codes[i][j] == all_aa_codes[k][j]):
+                            codes_match = 1
+                    if codes_match:
+                        cell_color = 'red'
+                        bad_cells += 1
+                    else:
+                        cell_color = 'green'
+                        good_cells += 1
+                    C.create_rectangle(cell_width * (j + 2) + 1, cell_height * (i + 2) + 1,
+                                       cell_width * (j + 3) - 1, cell_height * (i + 3) - 1, fill=cell_color)
+                    # C.create_text(cell_width * (j + 2.5), cell_height * (i + 2.5), text = aa_pairs[i][j], fill="white")
+                    C.create_text(cell_width * (j + 2.5), cell_height * (i + 2.5), text=all_aa_codes[i][j],
+                                  fill="white")
+        C.create_rectangle(0, 0, cell_width * 2 - 1, cell_height * 2 - 1, fill="black")
+        print(str(good_cells / (good_cells + bad_cells) * 100) + '%', (good_cells + bad_cells))
+
+        C.pack()
+        top.mainloop()
+
+    def get_codes(self, aa_string, code_dict):
+        aa_codes = []
+        for i in range(len(aa_string)):
+            aa_codes.append(code_dict[aa_string[i]])
+        return aa_codes
 
 
 class Stock:
@@ -728,6 +851,9 @@ and also prices for each type of labeling
         self.label_dict = {}
         self.label_options = {} ##Подумать, может свойством сделать?
         self.price_dict = {}
+        self.usage = {}
+        for res in RES_TYPES:
+            self.usage.update({res: 1})
 
     def read_from_file(self, filename):
 
@@ -741,6 +867,13 @@ and also prices for each type of labeling
 
         for i in range(len(d) - 1):
             self.label_dict.update({d[i + 1][0]: ''.join(d[i + 1][1:])})
+        self._generate_label_options()
+
+    def read_from_table(self, table):
+        for i in range(len(RES_TYPES)):
+            res = RES_TYPES[i]
+            table_part = [table[j][i] for j in range(len(table))]
+            self.label_dict.update({res: ''.join(["1" if cell else "0" for cell in table_part])})
         self._generate_label_options()
 
     def read_label_prices(self, input_file):
@@ -757,6 +890,12 @@ and also prices for each type of labeling
                 'D': d[i+1][4]
             }
             self.price_dict.update({residue: residue_prices})
+
+    def read_prices_from_table(self, table):
+        pass
+
+    def add_usage_dict(self, dict):
+        self.usage = dict
 
     def _generate_label_options(self):
         for residue in RES_TYPES:
@@ -891,17 +1030,35 @@ class SolutionFinder:
 
 # FUNCTIONS
 
+def set_parameters(parameters):
+    global SEQUENCE, HNCA, CHECK_PRICE, STOCK_TABLE, STOCK_NAME, JOB_NAME, PRICES_TABLE
+    JOB_NAME = parameters["job_name"]
+    SEQUENCE = parameters["sequence"]
+    STOCK_TABLE = parameters["label_table"]
+    HNCA = parameters["HNCA"]
+    PRICES_TABLE = parameters["prices_table"]
+    CHECK_PRICE = parameters["optimize_price"]
 
 def main():
 
     # DEFINITION OF OBJECTS: Stock, Sequence, Solution
+
+    # stock = Stock(JOB_NAME)
+    # stock.read_from_table(STOCK_TABLE)
+    # if CHECK_PRICE:
+    #     stock.read_prices_from_table(PRICES_TABLE)
+    # sequence = Sequence(JOB_NAME, sequence=SEQUENCE)
+    # sequence.calculate_stats(stock)
+    # solution = Solution(JOB_NAME, sequence, stock)
 
     stock = Stock("Lyukmanova")
     stock.read_from_file("LabelStore.txt")
     stock.read_label_prices("prices.txt")
 
     stock2 = Stock("Goncharuk")
-    stock2.read_from_file("LabelStore_2_ot_seregi.txt")
+    stock2.read_from_file("LabelStore_3_ot_seregi.txt")
+    stock2.read_label_prices("prices.txt")
+    stock2.add_usage_dict(USAGE_TABLE)
 
     stock3 = Stock("Kesha")
     stock3.read_from_file("LabelStore_Maslennikov.txt")
@@ -917,9 +1074,11 @@ def main():
 
     sequence3 = Sequence("Nav1D")
     sequence3.read_from_file("nav1D.seq")
-    sequence3.calculate_stats(stock)
+    sequence3.calculate_stats(stock2)
 
-    solution = Solution("Kv21", sequence, stock)
+    solution = Solution("Nav1D", sequence3, stock2)
+
+
     # END OF DEFINITION
 
     # Variables
@@ -958,6 +1117,7 @@ def main():
                 solution.found = True
             else:
                 solution.found = True
+                best_solution = copy.deepcopy(solution)
                 break
             solutions += 1
 
@@ -1001,8 +1161,9 @@ def main():
     t1 = time.time()
     print(t1 - t0)
 
-    return 0
+    return best_solution
 
 
 if __name__ == '__main__':
-    main()
+    solution = main()
+    solution.print_table()

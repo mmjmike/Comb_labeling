@@ -13,11 +13,14 @@ import tkinter.filedialog as tkFileDialog
 
 import file_browser
 import csv
+import SelLabel
 
 LARGE_FONT = ("Verdana", 12)
 NORM_FONT = ("Verdana", 10)
 SMALL_FONT = ("Verdana", 8)
 STOCK_CELL_SIZE = 10
+CELL_HEIGHT = 20
+CELL_WIDTH = 50
 
 RES_TYPES = ("A", "C", "D", "E", "F", "G", "H", "I", "K", "L",
              "M", "N", "P", "Q", "R", "S", "T", "V", "W", "Y")
@@ -25,6 +28,9 @@ LABEL_TYPES = ("X", "N", "C", "D")
 
 label_table = [[False for col in range(20)]
                     for row in range(4)]
+label_table[1][12] = False
+label_table[3][12] = False
+job_name = ""
 
 DEFAULT_PRICES_TABLE = [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
                         [3, 0, 4, 3, 3, 1, 0, 8, 3, 3, 9, 12, 0, 24, 100, 7, 18, 3, 24, 6],
@@ -63,6 +69,8 @@ def run(parent):
         "optimize_price": parent.check_price.get(),
         "HNCA": parent.hnca.get()
     }
+    SelLabel.set_parameters(run_parameters)
+    SelLabel.main()
 
 
 def open_stock_file(parent):
@@ -94,6 +102,7 @@ def open_stock_file(parent):
                         label_table[j][i] = False
                     else:
                         label_table[j][i] = True
+            parent.update_sequence_object()
 
         except Exception as e:
             popupmsg("Error in reading file: " + str(e))
@@ -118,6 +127,7 @@ def open_seq_file(parent):
                 f.close()
             if check_sequence(raw_sequence):
                 sequence = raw_sequence
+                parent.update_sequence_object()
                 text_field = parent.frames[MainPage].seq_input.text
                 text_field.delete('1.0', tk.END)
                 text_field.insert(tk.END, sequence)
@@ -251,14 +261,20 @@ class SelLabelapp(tk.Tk):
 
         tk.Tk.config(self, menu=menubar)
 
+        self.panels = (StartPage, MainPage, PricesInput, GraphPage, AllPairsTable, StockPairsTable, LabelInput)
+
         self.frames = {}
 
-        for F in (StartPage, MainPage, PricesInput, GraphPage):
-            frame = F(container, self)
-            self.frames[F] = frame
-            frame.grid(row=0, column=0, sticky="nsew")
+        self.first_run = True
 
-        self.show_frame(StartPage)
+        self.update_sequence_object()
+
+        for F in self.panels:
+            self.frame = F(container, self)
+            self.frames[F] = self.frame
+            self.frame.grid(row=2, column=0, sticky="nsew")
+
+        self.show_frame(MainPage)
 
     def default_label(self):
         self.frames[MainPage].label_input.default_label_table()
@@ -268,8 +284,21 @@ class SelLabelapp(tk.Tk):
 
     def show_frame(self, cont):
 
-        frame = self.frames[cont]
-        frame.tkraise()
+        if self.frame != self.frames[cont]:
+            self.frame = self.frames[cont]
+            self.frame.tkraise()
+
+    def update_sequence_object(self):
+        global sequence
+
+        self.sequence_obj = SelLabel.Sequence("Sequence", sequence)
+        stock_obj = SelLabel.Stock("stock")
+        stock_obj.read_from_table(label_table)
+        self.sequence_obj.calculate_stats(stock_obj)
+        if not self.first_run:
+            self.frames[AllPairsTable].draw_canvas()
+            self.frames[StockPairsTable].draw_canvas()
+        self.first_run = False
 
 
 def qf(param):
@@ -296,14 +325,15 @@ class MainPage(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
         self.parent = parent
-        prices_button = ttk.Button(self, text="Input prices",
-                            command=lambda: controller.show_frame(PricesInput))
-        prices_button.pack()
+        self.controller = controller
 
-        label = ttk.Label(self, text='Main page', font=LARGE_FONT)
-        label.pack(padx=10, pady=10)
-        self.label_input = LabelInput(self)
-        self.label_input.pack()
+        button_panel = ButtonPanel(self)
+        button_panel.pack(fill=tk.X)
+        ttk.Separator(self).pack(fill=tk.X)
+
+        ttk.Label(self, text='Sequence', font=LARGE_FONT).pack()
+        # self.label_input = LabelInput(self)
+        # self.label_input.grid(row=3, column=0, columnspan=4, sticky="ew")
         self.seq_input = SequenceInput(self)
         self.seq_input.pack()
 
@@ -327,41 +357,251 @@ class SequenceInput(tk.Frame):
 
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
+        self.parent = parent
 
         self.text = tk.Text(self, height=6, width=50)
         self.text.pack()
 
         check_button = ttk.Button(self, text="Use sequence", command=self.check_sequence)
         check_button.pack()
-        table_button = ttk.Button(self, text="Show pairs table", command=self.show_table)
-        table_button.pack()
 
     def check_sequence(self):
         global sequence
-        sequence = self.text.get("1.0", tk.END)
+        sequence = self.text.get("1.0", tk.END)[:-1].upper()
+        self.parent.controller.update_sequence_object()
+
 
     def show_table(self):
-        pass
+        global sequence
+        test_sequence = self.text.get("1.0", tk.END).upper()
+        test_sequence = test_sequence[:-1]
+
+        for i in range(len(test_sequence)):
+            if test_sequence[i] not in RES_TYPES and test_sequence[i] != "-":
+                message = "Error! Wrong character in sequence (position {0})".format(i)
+                popupmsg(message)
+                return
+        pair_table()
+
+
+def pair_table():
+    p_table = PairTable()
+    p_table.wm_title("Table of pairs")
+    p_table.mainloop()
+
+
+class PairTable(tk.Tk):
+
+    def __init__(self, *args, **kwargs):
+        tk.Tk.__init__(self, *args, **kwargs)
+        tk.Tk.wm_title(self, "Pair Table")
+
+        container = tk.Frame(self)
+        container.pack(side="top", fill="both", expand=True)
+        container.grid_rowconfigure(0, weight=1)
+        container.grid_columnconfigure(0, weight=1)
+
+        self.frames = {}
+
+        for F in (AllPairsTable, StockPairsTable):
+            frame = F(container, self)
+            self.frames[F] = frame
+            frame.grid(row=0, column=0, sticky="nsew")
+
+        self.show_frame(AllPairsTable)
+
+    def show_frame(self, cont):
+        frame = self.frames[cont]
+        frame.tkraise()
+
+
+class AllPairsTable(tk.Frame):
+
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+        button_panel = ButtonPanel(self)
+        button_panel.pack(fill=tk.X)
+        ttk.Separator(self).pack(fill=tk.X)
+
+        label = ttk.Label(self, text='All pairs in sequence sorted', font=LARGE_FONT)
+        label.pack()
+
+        self.canvas = tk.Canvas(self, width=CELL_WIDTH, height=CELL_HEIGHT,
+                                bg="black")
+        self.canvas.pack()
+
+        self.stats_label = ttk.Label(self, text='', font=LARGE_FONT)
+        self.stats_label.pack()
+
+        self.draw_canvas()
+
+    def draw_canvas(self):
+        row_res = self.controller.sequence_obj.residues_first
+        col_res = self.controller.sequence_obj.residues_second
+        x = len(col_res)
+        y = len(row_res)
+        cells = (x, y)
+        self.canvas.config(width=CELL_WIDTH * (cells[0] + 1), height=CELL_HEIGHT * (cells[1] + 1))
+        res_pairs = self.controller.sequence_obj.all_residue_pairs
+        unique_pairs_count = 0
+        pairs_count = 0
+
+        self.canvas.delete("all")
+        for i in range(cells[1]):
+            self.canvas.create_line(0, CELL_HEIGHT * (i + 1), CELL_WIDTH * (cells[0] + 1), CELL_HEIGHT * (i + 1),
+                          fill="white")
+            self.canvas.create_text(CELL_WIDTH / 2, CELL_HEIGHT * (i + 1.5), text=row_res[i], fill="white")
+        for i in range(cells[0]):
+            self.canvas.create_line(CELL_WIDTH * (i + 1), 0, CELL_WIDTH * (i + 1), CELL_HEIGHT * (cells[1] + 1),
+                          fill="white")
+            self.canvas.create_text(CELL_WIDTH * (i + 1.5), CELL_HEIGHT / 2, text=col_res[i], fill="white")
+        for i in range(cells[1]):
+            for j in range(cells[0]):
+                if res_pairs[i][j] > 0:
+                    if res_pairs[i][j] == 1:
+                        color = "green"
+                        unique_pairs_count += 1
+                    else:
+                        pairs_count += 1
+                        color = "red"
+                    self.canvas.create_rectangle(CELL_WIDTH * (j + 1) + 1,
+                                                 CELL_HEIGHT * (i + 1) + 1,
+                                                 CELL_WIDTH * (j + 2) - 1,
+                                                 CELL_HEIGHT * (i + 2) - 1,
+                                                 fill=color)
+                    self.canvas.create_text(CELL_WIDTH * (j + 1.5),
+                                            CELL_HEIGHT * (i + 1.5),
+                                            text=res_pairs[i][j],
+                                            fill="white")
+        all_pairs_count = unique_pairs_count + pairs_count
+        stats_text = "Unique: {}, Non-unique: {}, Total: {}".format(str(unique_pairs_count),
+                                                                     str(pairs_count), str(all_pairs_count))
+        self.stats_label.config(text=stats_text)
+
+
+class StockPairsTable(tk.Frame):
+
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+
+        button_panel = ButtonPanel(self)
+        button_panel.pack(fill=tk.X)
+        ttk.Separator(self).pack(fill=tk.X)
+
+        label = ttk.Label(self, text='Prices Input', font=LARGE_FONT)
+        label.pack()
+
+        self.canvas = tk.Canvas(self, width=CELL_WIDTH, height=CELL_HEIGHT,
+                                bg="black")
+        self.canvas.pack()
+
+        self.stats_label = ttk.Label(self, text='', font=LARGE_FONT)
+        self.stats_label.pack()
+
+        self.other_label = ttk.Label(self, text='', font=LARGE_FONT)
+        self.other_label.pack()
+
+        self.draw_canvas()
+
+    def draw_canvas(self):
+        row_res = self.controller.sequence_obj.residues_carbon
+        col_res = self.controller.sequence_obj.residues_nitro
+        x = len(col_res)
+        y = len(row_res)
+        cells = (x, y)
+        self.canvas.config(width=CELL_WIDTH * (cells[0] + 1), height=CELL_HEIGHT * (cells[1] + 1))
+        res_pairs = self.controller.sequence_obj.residue_pairs
+        unique_pairs_count = 0
+        pairs_count = 0
+        other_nitro_list = self.controller.sequence_obj.residues_not_nitro
+        other_carbon_list = self.controller.sequence_obj.residues_not_carbon
+
+        self.canvas.delete("all")
+        for i in range(cells[1]):
+            self.canvas.create_line(0, CELL_HEIGHT * (i + 1), CELL_WIDTH * (cells[0] + 1), CELL_HEIGHT * (i + 1),
+                          fill="white")
+            self.canvas.create_text(CELL_WIDTH / 2, CELL_HEIGHT * (i + 1.5), text=row_res[i], fill="white")
+        for i in range(cells[0]):
+            self.canvas.create_line(CELL_WIDTH * (i + 1), 0, CELL_WIDTH * (i + 1), CELL_HEIGHT * (cells[1] + 1),
+                          fill="white")
+            self.canvas.create_text(CELL_WIDTH * (i + 1.5), CELL_HEIGHT / 2, text=col_res[i], fill="white")
+        for i in range(cells[1]):
+            for j in range(cells[0]):
+                if res_pairs[i][j] > 0:
+                    if res_pairs[i][j] == 1:
+                        color = "green"
+                        unique_pairs_count += 1
+                    else:
+                        color = "red"
+                        pairs_count += 1
+                    self.canvas.create_rectangle(CELL_WIDTH * (j + 1) + 1,
+                                                 CELL_HEIGHT * (i + 1) + 1,
+                                                 CELL_WIDTH * (j + 2) - 1,
+                                                 CELL_HEIGHT * (i + 2) - 1,
+                                                 fill=color)
+                    self.canvas.create_text(CELL_WIDTH * (j + 1.5),
+                                            CELL_HEIGHT * (i + 1.5),
+                                            text=res_pairs[i][j],
+                                            fill="white")
+        all_pairs_count = unique_pairs_count + pairs_count
+        stats_text = "Unique: {}, Non-unique: {}, Total: {}".format(str(unique_pairs_count),
+                                                                     str(pairs_count), str(all_pairs_count))
+        other_text = "Other carbon: {}; Other nitro: {}".format(",".join(other_carbon_list),
+                                                                ",".join(other_nitro_list))
+        self.stats_label.config(text=stats_text)
+        self.other_label.config(text=other_text)
 
 
 class LabelInput(tk.Frame):
 
     global label_table, edit_labeling_scheme
 
-    def __init__(self, parent):
+    def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
-
+        self.controller = controller
+        self.parent = parent
         self._entry = {}
-        self.rows = 4
-        self.columns = 20
 
-        self.canvas = tk.Canvas(self, width=600, height=120, bg="white")
+        button_panel = ButtonPanel(self)
+        button_panel.pack(fill=tk.X)
+        ttk.Separator(self).pack(fill=tk.X)
 
         self.edit = tk.BooleanVar()
         self.edit.set(True)
 
+        self.label_canvas = LabelCanvas(self)
+        self.label_canvas.pack()
+
+        default_button = ttk.Button(self, text="Default stock", command=self.label_canvas.default_label_table)
+        default_button.pack()
+
+        read_file_button = ttk.Button(self, text="Read from file",
+                                      command=lambda: open_stock_file(controller))
+        read_file_button.pack()
+
+        edit_checkbox = ttk.Checkbutton(self, text="Edit",
+                                        variable=self.edit, onvalue=True,
+                                        offvalue=False)
+        edit_checkbox.pack()
+
+
+class LabelCanvas(tk.Frame):
+
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
+        self.parent = parent
+        self.rows = 4
+        self.columns = 20
+        self.stock_cell_width = 45
+        self.stock_cell_height = 30
+        self.canvas = tk.Canvas(self, width=self.stock_cell_width*self.columns,
+                                height=self.stock_cell_height*self.rows, bg="white")
+        self.canvas.bind("<Button 1>", self._change_table_cell)
         self.default_label_table()
         self.draw_canvas()
+
         for row in range(self.rows):
             ttk.Label(self, text=LABEL_TYPES[row], font=NORM_FONT).grid(row=(row + 1), column=0)
         for column in range(self.columns):
@@ -371,56 +611,56 @@ class LabelInput(tk.Frame):
             self.grid_columnconfigure(column + 1, weight=1)
         # designate a final, empty row to fill up any extra space
         self.grid_rowconfigure(self.rows + 1, weight=1)
-        self.canvas.bind("<Button 1>", self._change_table_cell)
-
-        default_button = ttk.Button(self, text="Default stock", command=self.default_label_table)
-        default_button.grid(row=6, column=12, columnspan=3)
-
-        read_file_button = ttk.Button(self, text="Read from file",
-                                      command=lambda: open_stock_file(parent.parent))
-        read_file_button.grid(row=6, column=16, columnspan=3)
-
-        edit_checkbox = ttk.Checkbutton(self, text="Edit",
-                                        variable=self.edit, onvalue=True,
-                                        offvalue=False)
-        edit_checkbox.grid(row=6, column=5, columnspan=4)
 
     def draw_canvas(self):
+
         self.canvas.delete("all")
 
         for i in range(4):
             for j in range(20):
                 cell_color = "white"
                 if label_table[i][j]:
-                    if self.edit.get():
+                    if self.parent.edit.get():
                         cell_color = "green"
                     else:
                         cell_color = "#555555"
                 if (i == 1 or i == 3) and j == 12:
                     cell_color = "#999999"
-                self.canvas.create_rectangle(j * 30, i * 30, (j + 1) * 30, (i + 1) * 30, fill=cell_color)
+                self.canvas.create_rectangle(j * self.stock_cell_width,
+                                             i * self.stock_cell_height,
+                                             (j + 1) * self.stock_cell_width,
+                                             (i + 1) * self.stock_cell_height,
+                                             fill=cell_color)
         for i in range(3):
-            self.canvas.create_line(0, 30 * (i + 1), 600, 30 * (i + 1), width=1, fill="black")
+            self.canvas.create_line(0, self.stock_cell_height * (i + 1),
+                                    self.stock_cell_width * self.columns, self.stock_cell_height * (i + 1), width=1,
+                                    fill="black")
         for i in range(19):
-            self.canvas.create_line(30 * (i + 1), 0, 30 * (i + 1), 120, width=1, fill="black")
+            self.canvas.create_line(self.stock_cell_width * (i + 1), 0, self.stock_cell_width * (i + 1),
+                                    self.stock_cell_height * self.rows, width=1, fill="black")
         self.canvas.after(20, self.draw_canvas)
+        self.canvas.create_text(20, 20, text="1578.83", fill="black")
 
     def default_label_table(self):
         global label_table
 
-        if self.edit.get():
+        if self.parent.edit.get():
             for i in range(20):
                 for j in range(3):
                     label_table[j][i] = True
             for i in range(20):
                 label_table[3][i] = False
+        self.parent.controller.update_sequence_object()
 
     def _change_table_cell(self, event):
         global label_table
-        x = event.x // 30
-        y = event.y // 30
-        if self.edit.get() and x <= 19 and x >= 0 and y <= 3 and y >= 0:
-                label_table[y][x] = label_table[y][x] ^ True
+        x = event.x // self.stock_cell_width
+        y = event.y // self.stock_cell_height
+        if self.parent.edit.get() and x <= 19 and x >= 0 and y <= 3 and y >= 0:
+            label_table[y][x] = label_table[y][x] ^ True
+        label_table[1][12] = False
+        label_table[3][12] = False
+        self.parent.controller.update_sequence_object()
 
 
 class PricesInput(tk.Frame):
@@ -461,6 +701,7 @@ class PricesInput(tk.Frame):
 
 
 class TableInput(tk.Frame):
+
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
 
@@ -523,6 +764,32 @@ class TableInput(tk.Frame):
         return True
 
 
+class ButtonPanel(tk.Frame):
+
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
+
+        self.styles = {}
+        for panel in parent.controller.panels:
+            self.styles[panel] = "TButton"
+        self.styles[parent.__class__] = "current.TButton"
+
+        ttk.Style().configure("current.TButton", background="black")
+
+        sequence_button = ttk.Button(self, text="Sequence", style=self.styles[MainPage],
+                                     command=lambda: parent.controller.show_frame(MainPage))
+        sequence_button.grid(row=0, column=0, sticky='w')
+        stock_button = ttk.Button(self, text="Stock", style=self.styles[LabelInput],
+                                  command=lambda: parent.controller.show_frame(LabelInput))
+        stock_button.grid(row=0, column=1, sticky='w')
+        all_paires_button = ttk.Button(self, text="All pairs table", style=self.styles[AllPairsTable],
+                                       command=lambda: parent.controller.show_frame(AllPairsTable))
+        all_paires_button.grid(row=0, column=2, sticky='w')
+        paires_button = ttk.Button(self, text="Stock pairs table", style=self.styles[StockPairsTable],
+                                   command=lambda: parent.controller.show_frame(StockPairsTable))
+        paires_button.grid(row=0, column=3, sticky='w')
+
+
 class GraphPage(tk.Frame):
 
     def __init__(self, parent, controller):
@@ -546,7 +813,7 @@ class GraphPage(tk.Frame):
 if __name__ == '__main__':
     app = SelLabelapp()
 
-    app.geometry("800x500")
+    app.geometry("1000x500")
     app.minsize(650, 430)
     #ani = animation.FuncAnimation(f, animate, interval=1000)
     app.mainloop()
