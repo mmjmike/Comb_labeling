@@ -261,7 +261,9 @@ class SelLabelapp(tk.Tk):
 
         tk.Tk.config(self, menu=menubar)
 
-        self.panels = (StartPage, MainPage, PricesInput, GraphPage, AllPairsTable, StockPairsTable, LabelInput)
+        self.panels = (StartPage, MainPage, PricesInput, GraphPage, AllPairsTable, StockPairsTable
+                       # , LabelInput
+                       )
 
         self.frames = {}
 
@@ -336,6 +338,32 @@ class MainPage(tk.Frame):
         # self.label_input.grid(row=3, column=0, columnspan=4, sticky="ew")
         self.seq_input = SequenceInput(self)
         self.seq_input.pack()
+
+        self.edit = tk.BooleanVar()
+        self.edit.set(True)
+
+        self.edit_select = tk.IntVar()
+
+        tk.Radiobutton(self, text="Edit stock", variable=self.edit_select, value=1).pack()
+        tk.Radiobutton(self, text="Edit prices", variable=self.edit_select, value=2).pack()
+        tk.Radiobutton(self, text="Lock edit", variable=self.edit_select, value=3).pack()
+        self.edit_select.set(1)
+
+        self.label_canvas = LabelCanvas(self)
+        self.label_canvas.pack()
+
+        default_button = ttk.Button(self, text="Default stock", command=self.label_canvas.default_label_table)
+        default_button.pack()
+
+        read_file_button = ttk.Button(self, text="Read from file",
+                                      command=lambda: open_stock_file(controller))
+        read_file_button.pack()
+
+        edit_checkbox = ttk.Checkbutton(self, text="Edit",
+                                        variable=self.edit, onvalue=True,
+                                        offvalue=False)
+        edit_checkbox.pack()
+
 
         self.check_price = tk.BooleanVar()
         self.check_price.set(False)
@@ -437,47 +465,51 @@ class AllPairsTable(tk.Frame):
         self.draw_canvas()
 
     def draw_canvas(self):
-        row_res = self.controller.sequence_obj.residues_first
-        col_res = self.controller.sequence_obj.residues_second
-        x = len(col_res)
-        y = len(row_res)
-        cells = (x, y)
-        self.canvas.config(width=CELL_WIDTH * (cells[0] + 1), height=CELL_HEIGHT * (cells[1] + 1))
-        res_pairs = self.controller.sequence_obj.all_residue_pairs
-        unique_pairs_count = 0
-        pairs_count = 0
+        if self.controller.sequence_obj.sequence != "":
+            row_res = self.controller.sequence_obj.residues_first
+            col_res = self.controller.sequence_obj.residues_second
+            x = len(col_res)
+            y = len(row_res)
+            cells = (x, y)
+            self.canvas.config(width=CELL_WIDTH * (cells[0] + 1), height=CELL_HEIGHT * (cells[1] + 1))
+            res_pairs = self.controller.sequence_obj.all_residue_pairs
+            unique_pairs_count = 0
+            pairs_count = 0
 
-        self.canvas.delete("all")
-        for i in range(cells[1]):
-            self.canvas.create_line(0, CELL_HEIGHT * (i + 1), CELL_WIDTH * (cells[0] + 1), CELL_HEIGHT * (i + 1),
-                          fill="white")
-            self.canvas.create_text(CELL_WIDTH / 2, CELL_HEIGHT * (i + 1.5), text=row_res[i], fill="white")
-        for i in range(cells[0]):
-            self.canvas.create_line(CELL_WIDTH * (i + 1), 0, CELL_WIDTH * (i + 1), CELL_HEIGHT * (cells[1] + 1),
-                          fill="white")
-            self.canvas.create_text(CELL_WIDTH * (i + 1.5), CELL_HEIGHT / 2, text=col_res[i], fill="white")
-        for i in range(cells[1]):
-            for j in range(cells[0]):
-                if res_pairs[i][j] > 0:
-                    if res_pairs[i][j] == 1:
-                        color = "green"
-                        unique_pairs_count += 1
-                    else:
-                        pairs_count += 1
-                        color = "red"
-                    self.canvas.create_rectangle(CELL_WIDTH * (j + 1) + 1,
-                                                 CELL_HEIGHT * (i + 1) + 1,
-                                                 CELL_WIDTH * (j + 2) - 1,
-                                                 CELL_HEIGHT * (i + 2) - 1,
-                                                 fill=color)
-                    self.canvas.create_text(CELL_WIDTH * (j + 1.5),
-                                            CELL_HEIGHT * (i + 1.5),
-                                            text=res_pairs[i][j],
-                                            fill="white")
-        all_pairs_count = unique_pairs_count + pairs_count
-        stats_text = "Unique: {}, Non-unique: {}, Total: {}".format(str(unique_pairs_count),
-                                                                     str(pairs_count), str(all_pairs_count))
-        self.stats_label.config(text=stats_text)
+            self.canvas.delete("all")
+            for i in range(cells[1]):
+                self.canvas.create_line(0, CELL_HEIGHT * (i + 1), CELL_WIDTH * (cells[0] + 1), CELL_HEIGHT * (i + 1),
+                              fill="white")
+                self.canvas.create_text(CELL_WIDTH / 2, CELL_HEIGHT * (i + 1.5), text=row_res[i], fill="white")
+            for i in range(cells[0]):
+                self.canvas.create_line(CELL_WIDTH * (i + 1), 0, CELL_WIDTH * (i + 1), CELL_HEIGHT * (cells[1] + 1),
+                              fill="white")
+                self.canvas.create_text(CELL_WIDTH * (i + 1.5), CELL_HEIGHT / 2, text=col_res[i], fill="white")
+            for i in range(cells[1]):
+                for j in range(cells[0]):
+                    if res_pairs[i][j] > 0:
+                        if res_pairs[i][j] == 1:
+                            color = "green"
+                            unique_pairs_count += 1
+                        else:
+                            pairs_count += 1
+                            color = "red"
+                        self.canvas.create_rectangle(CELL_WIDTH * (j + 1) + 1,
+                                                     CELL_HEIGHT * (i + 1) + 1,
+                                                     CELL_WIDTH * (j + 2) - 1,
+                                                     CELL_HEIGHT * (i + 2) - 1,
+                                                     fill=color)
+                        self.canvas.create_text(CELL_WIDTH * (j + 1.5),
+                                                CELL_HEIGHT * (i + 1.5),
+                                                text=res_pairs[i][j],
+                                                fill="white")
+            all_pairs_count = unique_pairs_count + pairs_count
+            stats_text = "Unique: {}, Non-unique: {}, Total: {}".format(str(unique_pairs_count),
+                                                                         str(pairs_count), str(all_pairs_count))
+            self.stats_label.config(text=stats_text)
+        else:
+            self.stats_label.config(text="")
+            self.canvas.config(width=CELL_WIDTH, height=CELL_HEIGHT)
 
 
 class StockPairsTable(tk.Frame):
@@ -506,52 +538,57 @@ class StockPairsTable(tk.Frame):
         self.draw_canvas()
 
     def draw_canvas(self):
-        row_res = self.controller.sequence_obj.residues_carbon
-        col_res = self.controller.sequence_obj.residues_nitro
-        x = len(col_res)
-        y = len(row_res)
-        cells = (x, y)
-        self.canvas.config(width=CELL_WIDTH * (cells[0] + 1), height=CELL_HEIGHT * (cells[1] + 1))
-        res_pairs = self.controller.sequence_obj.residue_pairs
-        unique_pairs_count = 0
-        pairs_count = 0
-        other_nitro_list = self.controller.sequence_obj.residues_not_nitro
-        other_carbon_list = self.controller.sequence_obj.residues_not_carbon
+        if self.controller.sequence_obj.sequence != "":
+            row_res = self.controller.sequence_obj.residues_carbon
+            col_res = self.controller.sequence_obj.residues_nitro
+            x = len(col_res)
+            y = len(row_res)
+            cells = (x, y)
+            self.canvas.config(width=CELL_WIDTH * (cells[0] + 1), height=CELL_HEIGHT * (cells[1] + 1))
+            res_pairs = self.controller.sequence_obj.residue_pairs
+            unique_pairs_count = 0
+            pairs_count = 0
+            other_nitro_list = self.controller.sequence_obj.residues_not_nitro
+            other_carbon_list = self.controller.sequence_obj.residues_not_carbon
 
-        self.canvas.delete("all")
-        for i in range(cells[1]):
-            self.canvas.create_line(0, CELL_HEIGHT * (i + 1), CELL_WIDTH * (cells[0] + 1), CELL_HEIGHT * (i + 1),
-                          fill="white")
-            self.canvas.create_text(CELL_WIDTH / 2, CELL_HEIGHT * (i + 1.5), text=row_res[i], fill="white")
-        for i in range(cells[0]):
-            self.canvas.create_line(CELL_WIDTH * (i + 1), 0, CELL_WIDTH * (i + 1), CELL_HEIGHT * (cells[1] + 1),
-                          fill="white")
-            self.canvas.create_text(CELL_WIDTH * (i + 1.5), CELL_HEIGHT / 2, text=col_res[i], fill="white")
-        for i in range(cells[1]):
-            for j in range(cells[0]):
-                if res_pairs[i][j] > 0:
-                    if res_pairs[i][j] == 1:
-                        color = "green"
-                        unique_pairs_count += 1
-                    else:
-                        color = "red"
-                        pairs_count += 1
-                    self.canvas.create_rectangle(CELL_WIDTH * (j + 1) + 1,
-                                                 CELL_HEIGHT * (i + 1) + 1,
-                                                 CELL_WIDTH * (j + 2) - 1,
-                                                 CELL_HEIGHT * (i + 2) - 1,
-                                                 fill=color)
-                    self.canvas.create_text(CELL_WIDTH * (j + 1.5),
-                                            CELL_HEIGHT * (i + 1.5),
-                                            text=res_pairs[i][j],
-                                            fill="white")
-        all_pairs_count = unique_pairs_count + pairs_count
-        stats_text = "Unique: {}, Non-unique: {}, Total: {}".format(str(unique_pairs_count),
-                                                                     str(pairs_count), str(all_pairs_count))
-        other_text = "Other carbon: {}; Other nitro: {}".format(",".join(other_carbon_list),
-                                                                ",".join(other_nitro_list))
-        self.stats_label.config(text=stats_text)
-        self.other_label.config(text=other_text)
+            self.canvas.delete("all")
+            for i in range(cells[1]):
+                self.canvas.create_line(0, CELL_HEIGHT * (i + 1), CELL_WIDTH * (cells[0] + 1), CELL_HEIGHT * (i + 1),
+                              fill="white")
+                self.canvas.create_text(CELL_WIDTH / 2, CELL_HEIGHT * (i + 1.5), text=row_res[i], fill="white")
+            for i in range(cells[0]):
+                self.canvas.create_line(CELL_WIDTH * (i + 1), 0, CELL_WIDTH * (i + 1), CELL_HEIGHT * (cells[1] + 1),
+                              fill="white")
+                self.canvas.create_text(CELL_WIDTH * (i + 1.5), CELL_HEIGHT / 2, text=col_res[i], fill="white")
+            for i in range(cells[1]):
+                for j in range(cells[0]):
+                    if res_pairs[i][j] > 0:
+                        if res_pairs[i][j] == 1:
+                            color = "green"
+                            unique_pairs_count += 1
+                        else:
+                            color = "red"
+                            pairs_count += 1
+                        self.canvas.create_rectangle(CELL_WIDTH * (j + 1) + 1,
+                                                     CELL_HEIGHT * (i + 1) + 1,
+                                                     CELL_WIDTH * (j + 2) - 1,
+                                                     CELL_HEIGHT * (i + 2) - 1,
+                                                     fill=color)
+                        self.canvas.create_text(CELL_WIDTH * (j + 1.5),
+                                                CELL_HEIGHT * (i + 1.5),
+                                                text=res_pairs[i][j],
+                                                fill="white")
+            all_pairs_count = unique_pairs_count + pairs_count
+            stats_text = "Unique: {}, Non-unique: {}, Total: {}".format(str(unique_pairs_count),
+                                                                         str(pairs_count), str(all_pairs_count))
+            other_text = "Other carbon: {}; Other nitro: {}".format(",".join(other_carbon_list),
+                                                                    ",".join(other_nitro_list))
+            self.stats_label.config(text=stats_text)
+            self.other_label.config(text=other_text)
+        else:
+            self.stats_label.config(text="")
+            self.other_label.config(text="")
+            self.canvas.config(width=CELL_WIDTH, height=CELL_HEIGHT)
 
 
 class LabelInput(tk.Frame):
@@ -562,7 +599,6 @@ class LabelInput(tk.Frame):
         tk.Frame.__init__(self, parent)
         self.controller = controller
         self.parent = parent
-        self._entry = {}
 
         button_panel = ButtonPanel(self)
         button_panel.pack(fill=tk.X)
@@ -592,6 +628,7 @@ class LabelCanvas(tk.Frame):
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
         self.parent = parent
+        self.start = True
         self.rows = 4
         self.columns = 20
         self.stock_cell_width = 45
@@ -601,6 +638,8 @@ class LabelCanvas(tk.Frame):
         self.canvas.bind("<Button 1>", self._change_table_cell)
         self.default_label_table()
         self.draw_canvas()
+
+
 
         for row in range(self.rows):
             ttk.Label(self, text=LABEL_TYPES[row], font=NORM_FONT).grid(row=(row + 1), column=0)
@@ -620,7 +659,7 @@ class LabelCanvas(tk.Frame):
             for j in range(20):
                 cell_color = "white"
                 if label_table[i][j]:
-                    if self.parent.edit.get():
+                    if self.parent.edit_select.get() != 3:
                         cell_color = "green"
                     else:
                         cell_color = "#555555"
@@ -650,14 +689,18 @@ class LabelCanvas(tk.Frame):
                     label_table[j][i] = True
             for i in range(20):
                 label_table[3][i] = False
-        self.parent.controller.update_sequence_object()
+        if not self.start:
+            self.parent.controller.update_sequence_object()
+            self.start = False
 
     def _change_table_cell(self, event):
         global label_table
         x = event.x // self.stock_cell_width
         y = event.y // self.stock_cell_height
-        if self.parent.edit.get() and x <= 19 and x >= 0 and y <= 3 and y >= 0:
+        if self.parent.edit_select.get() == 1 and x <= 19 and x >= 0 and y <= 3 and y >= 0:
             label_table[y][x] = label_table[y][x] ^ True
+        if self.parent.edit_select.get() == 2 and x <= 19 and x >= 0 and y <= 3 and y >= 0:
+            pass
         label_table[1][12] = False
         label_table[3][12] = False
         self.parent.controller.update_sequence_object()
@@ -776,12 +819,12 @@ class ButtonPanel(tk.Frame):
 
         ttk.Style().configure("current.TButton", background="black")
 
-        sequence_button = ttk.Button(self, text="Sequence", style=self.styles[MainPage],
+        sequence_button = ttk.Button(self, text="Main page", style=self.styles[MainPage],
                                      command=lambda: parent.controller.show_frame(MainPage))
         sequence_button.grid(row=0, column=0, sticky='w')
-        stock_button = ttk.Button(self, text="Stock", style=self.styles[LabelInput],
-                                  command=lambda: parent.controller.show_frame(LabelInput))
-        stock_button.grid(row=0, column=1, sticky='w')
+        # stock_button = ttk.Button(self, text="Stock", style=self.styles[LabelInput],
+        #                           command=lambda: parent.controller.show_frame(LabelInput))
+        # stock_button.grid(row=0, column=1, sticky='w')
         all_paires_button = ttk.Button(self, text="All pairs table", style=self.styles[AllPairsTable],
                                        command=lambda: parent.controller.show_frame(AllPairsTable))
         all_paires_button.grid(row=0, column=2, sticky='w')
